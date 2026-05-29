@@ -1,0 +1,11 @@
+streamlit
+chromadb
+langchain
+langchain-community
+sentence-transformers
+transformers
+torch
+sentencepiece
+pandas
+numpy
+matplotlib
