@@ -111,7 +111,7 @@ def get_battery():
         'cycle_count':random.randint(120,3900),'warranty_valid':True
     }
 
-def get_solar(panels=18, watt=580, inv=0.96, demand=18.0):
+def get_solar(panels=18, watt=580, inv=0.96):
     PSH={1:5.2,2:5.8,3:6.1,4:6.5,5:6.8,6:5.9,7:4.8,8:5.1,9:5.6,10:5.9,11:5.5,12:5.0}
     TD ={1:0.94,2:0.93,3:0.91,4:0.89,5:0.87,6:0.86,7:0.88,8:0.88,9:0.89,10:0.91,11:0.93,12:0.94}
     sys=round((panels*watt)/1000,2); mon=datetime.now().month; h=datetime.now().hour
@@ -119,18 +119,18 @@ def get_solar(panels=18, watt=580, inv=0.96, demand=18.0):
     cur=round(sys*math.exp(-0.5*((h-12)/3.5)**2)*inv*td,2) if 6<=h<=18 else 0.0
     return {'system_kw':sys,'current_kw':cur,'daily_forecast_kwh':daily,
             'peak_sun_hours':psh,'temp_derate':td,'num_panels':panels,
-            'panel_watt':watt,'net_export':round(max(0,daily-demand),2)}
+            'panel_watt':watt,'net_export':round(max(0,daily-18.0),2)}
 
 BLOCKED=['turn off refrigerator','turn off fridge','override','shutdown',
          'disable safety','hack','bypass','inject','drop table','rm -rf','delete all']
 
-def run_pipeline(user_input, monthly=350, panels=18, watt=580, demand=18.0):
+def run_pipeline(user_input, monthly=350, panels=18, watt=580):
     logs=[]
     for kw in BLOCKED:
         if kw in user_input.lower():
             return None, f'BLOCKED: {kw}', []
     logs.append('SecurityAgent  : APPROVED')
-    W=get_weather(); T=get_tariff(monthly); B=get_battery(); S=get_solar(panels,watt,demand=demand)
+    W=get_weather(); T=get_tariff(monthly); B=get_battery(); S=get_solar(panels,watt)
     logs.append(f'WeatherTool    : {W["condition"]}, {W["temperature"]}C, {W["cloud_cover"]}% cloud')
     logs.append(f'TariffTool     : {T["period"]}, PKR {T["rate_pkr"]}/kWh')
     logs.append(f'BatteryTool    : {B["soc_percent"]}% SOC - {B["status"]}')
@@ -150,7 +150,7 @@ def run_pipeline(user_input, monthly=350, panels=18, watt=580, demand=18.0):
     elif per=='peak' and soc<55:  act,av,sc,rsn='Reduce Load Peak+Low Battery',False,60,'Peak+low battery'
     else:                          act,av,sc,rsn='Grid Fallback',False,40,'No signal'
     logs.append(f'OptimizationAgent: {act} | {sc}/100')
-    DEMAND=demand; grid=max(0,round(DEMAND-adj,2)); rate=T['rate_pkr']
+    DEMAND=18.0; grid=max(0,round(DEMAND-adj,2)); rate=T['rate_pkr']
     gcost=round(grid*rate,2); fcost=round(DEMAND*rate,2); sav=round(fcost-gcost,2)
     earn=round(S['net_export']*19.32,2); cov=round(min(100,(adj/DEMAND)*100),1); msav=round(sav*30,2)
     logs.append(f'CostAgent      : PKR {sav}/day | {cov}% solar')
@@ -192,15 +192,14 @@ with st.sidebar:
     num_panels  = st.slider('Solar Panels', 6, 30, 18)
     panel_watt  = st.selectbox('Panel Wattage (W)', [300,350,400,450,500,550,580,600], index=6)
     monthly_kwh = st.slider('Monthly Usage (units)', 100, 800, 350)
-    daily_demand = round(monthly_kwh / 30, 2)
-    st.caption(f'System: {round(num_panels*panel_watt/1000,2)} kW  |  Demand: {daily_demand} kWh/day')
+    st.caption(f'System: {round(num_panels*panel_watt/1000,2)} kW')
 
 # PAGE 1 - LIVE DASHBOARD
 if page == 'Live Dashboard':
     st.title('Smart Energy Dashboard')
     st.caption(f'Live - Karachi - {datetime.now().strftime("%A %d %B %Y  %H:%M:%S")}')
     st.divider()
-    W=get_weather(); T=get_tariff(monthly_kwh); B=get_battery(); S=get_solar(num_panels,panel_watt,demand=daily_demand)
+    W=get_weather(); T=get_tariff(monthly_kwh); B=get_battery(); S=get_solar(num_panels,panel_watt)
     st.subheader('Weather - Karachi (OpenWeatherMap Live)')
     c1,c2,c3,c4,c5=st.columns(5)
     c1.metric('Condition', W['condition'])
@@ -211,12 +210,11 @@ if page == 'Live Dashboard':
     st.caption(f'Sunrise {W["sunrise"]} | Sunset {W["sunset"]} | Solar Index {W["solar_index"]} | {W["source"]}')
     st.divider()
     st.subheader('Solar Generation')
-    s1,s2,s3,s4,s5=st.columns(5)
+    s1,s2,s3,s4=st.columns(4)
     s1.metric('Current Output', f'{S["current_kw"]} kW')
     s2.metric('Daily Forecast', f'{S["daily_forecast_kwh"]} kWh')
     s3.metric('System Size', f'{S["system_kw"]} kW')
-    s4.metric('Daily Demand', f'{daily_demand} kWh')
-    s5.metric('Net Export', f'{S["net_export"]} kWh')
+    s4.metric('Net Export', f'{S["net_export"]} kWh')
     st.caption(f'{num_panels} panels x {panel_watt}W | PSH {S["peak_sun_hours"]}h | Derate {S["temp_derate"]}')
     st.divider()
     cb,ct=st.columns(2)
@@ -246,7 +244,7 @@ elif page == 'Run Pipeline':
     user_input=st.text_input('Energy request:','Optimize my home energy usage for today')
     if st.button('Run Pipeline'):
         with st.spinner('Running all 5 agents...'):
-            res,err,logs=run_pipeline(user_input,monthly_kwh,num_panels,panel_watt,daily_demand)
+            res,err,logs=run_pipeline(user_input,monthly_kwh,num_panels,panel_watt)
         if err:
             st.error(err)
         else:
@@ -281,7 +279,7 @@ elif page == 'Run Pipeline':
             st.divider()
             st.subheader('Energy Flow')
             fig,ax=plt.subplots(figsize=(8,3.5))
-            vals=[res['fc']['adj'],res['co']['grid'],daily_demand]
+            vals=[res['fc']['adj'],res['co']['grid'],18.0]
             lbls=['Solar Supply','Grid Draw','Daily Demand']
             cols=['#f59e0b','#3b82f6','#6b7280']
             brs=ax.bar(lbls,vals,color=cols,edgecolor='white',linewidth=1.2)
@@ -305,7 +303,7 @@ elif page == 'LLM Chat':
         with st.chat_message('user'): st.write(q)
         with st.chat_message('assistant'):
             with st.spinner('Thinking...'):
-                W=get_weather(); B=get_battery(); T=get_tariff(monthly_kwh); S=get_solar(num_panels,panel_watt,demand=daily_demand)
+                W=get_weather(); B=get_battery(); T=get_tariff(monthly_kwh); S=get_solar(num_panels,panel_watt)
                 prompt=(f'Smart home energy advisor Karachi. Weather {W["condition"]} {W["temperature"]}C. '
                         f'Battery {B["soc_percent"]}% SOC {B["status"]}. '
                         f'Solar {S["current_kw"]}kW now {S["daily_forecast_kwh"]}kWh today. '
@@ -380,7 +378,7 @@ elif page == 'Live Web Search':
             st.subheader('LLM Summary')
             st.caption('FLAN-T5-XL synthesizes results in your system context')
             with st.spinner('Summarizing...'):
-                W=get_weather(); T=get_tariff(monthly_kwh); S=get_solar(num_panels,panel_watt,demand=daily_demand)
+                W=get_weather(); T=get_tariff(monthly_kwh); S=get_solar(num_panels,panel_watt)
                 sp=(f'Smart home advisor Karachi with {S["system_kw"]}kW solar. '
                     f'Tariff {T["period"]} PKR {T["rate_pkr"]}/kWh. '
                     f'Web search about {search_q}: {snippets[:600]} '
@@ -399,7 +397,7 @@ elif page == 'Analytics':
     st.title('System Analytics')
     st.caption('All values computed from real data')
     st.divider()
-    S=get_solar(num_panels,panel_watt,demand=daily_demand); T=get_tariff(monthly_kwh); W=get_weather()
+    S=get_solar(num_panels,panel_watt); T=get_tariff(monthly_kwh); W=get_weather()
     sys_kw=S['system_kw']; td=S['temp_derate']
     cf=round(max(0,(1-W['cloud_cover']/100)*(1-W['humidity']/200)),2)
     hrs=list(range(24))
@@ -418,7 +416,7 @@ elif page == 'Analytics':
     TDL=[0.94,0.93,0.91,0.89,0.87,0.86,0.88,0.88,0.89,0.91,0.93,0.94]
     MTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     rate=T['base_rate']
-    savs=[round(min(sys_kw*p*0.96*t*0.95,daily_demand)*rate*30,0) for p,t in zip(PSH,TDL)]
+    savs=[round(min(sys_kw*p*0.96*t*0.95,18.0)*rate*30,0) for p,t in zip(PSH,TDL)]
     st.subheader('Monthly Savings Projection')
     fig2,ax2=plt.subplots(figsize=(11,3.5))
     brs=ax2.bar(MTHS,savs,color='#7c3aed',edgecolor='white',linewidth=0.8)
